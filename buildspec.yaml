@@ -12,7 +12,7 @@ phases:
   pre_build:
     commands:
       - echo "Running unit tests..."
-      - pytest tests/ -v --tb=short
+      - pytest test/ -v --tb=short
 
   build:
     commands:
