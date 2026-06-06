@@ -1,0 +1,34 @@
+version: 0.2
+
+phases:
+
+  install:
+
+    runtime-versions:
+      python: 3.12
+
+    commands:
+      - pip install pytest
+
+  pre_build:
+
+    commands:
+      - echo "Running unit tests..."
+      - pytest test/ -v --tb=short
+      - echo "Tests passed. Building SAM application..."
+
+  build:
+
+    commands:
+      - sam build
+
+  post_build:
+
+    commands:
+      - echo "Deploying to production..."
+      - sam deploy --no-confirm-changeset
+
+artifacts:
+
+  files:
+    - "**/*"

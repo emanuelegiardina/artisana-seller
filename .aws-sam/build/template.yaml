@@ -1,0 +1,224 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Globals:
+  Function:
+    Runtime: python3.11
+    Timeout: 10
+    MemorySize: 256
+Resources:
+  ImagesTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: emanuele-artisana-images-test
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+      - AttributeName: PK
+        AttributeType: S
+      - AttributeName: SK
+        AttributeType: S
+      KeySchema:
+      - AttributeName: PK
+        KeyType: HASH
+      - AttributeName: SK
+        KeyType: RANGE
+  UploadBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: emanuele-artisana-upload-test
+  ThumbnailBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: emanuele-artisana-thumbnails-test
+  PillowLayer:
+    Type: AWS::Serverless::LayerVersion
+    Properties:
+      LayerName: pillow311-layer-test
+      ContentUri: ../../layers/pillow
+      CompatibleRuntimes:
+      - python3.11
+  XRayLayer:
+    Type: AWS::Serverless::LayerVersion
+    Properties:
+      LayerName: emanuele-xray-sdk-layer
+      ContentUri: ../../layers/xray
+      CompatibleRuntimes:
+      - python3.11
+  GenerateUploadRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: Emanuele-GenerateUploadRole-test
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+        - Effect: Allow
+          Principal:
+            Service:
+            - lambda.amazonaws.com
+          Action:
+          - sts:AssumeRole
+      ManagedPolicyArns:
+      - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+      - PolicyName: upload-policy
+        PolicyDocument:
+          Version: '2012-10-17'
+          Statement:
+          - Effect: Allow
+            Action:
+            - s3:PutObject
+            Resource:
+            - arn:aws:s3:::emanuele-artisana-upload-test/*
+  ImageProcessorRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: Emanuele-ImageProcessorRole-test
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+        - Effect: Allow
+          Principal:
+            Service:
+            - lambda.amazonaws.com
+          Action:
+          - sts:AssumeRole
+      ManagedPolicyArns:
+      - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+      - PolicyName: processor-policy
+        PolicyDocument:
+          Version: '2012-10-17'
+          Statement:
+          - Effect: Allow
+            Action:
+            - s3:GetObject
+            Resource:
+            - Fn::Sub: arn:aws:s3:::emanuele-artisana-upload-test/*
+          - Effect: Allow
+            Action:
+            - s3:PutObject
+            Resource:
+            - Fn::Sub: arn:aws:s3:::emanuele-artisana-thumbnails-test/*
+          - Effect: Allow
+            Action:
+            - dynamodb:PutItem
+            Resource:
+            - Fn::Sub: arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/emanuele-artisana-images-test
+      - PolicyName: XRayAccess
+        PolicyDocument:
+          Version: '2012-10-17'
+          Statement:
+          - Effect: Allow
+            Action:
+            - xray:PutTraceSegments
+            - xray:PutTelemetryRecords
+            Resource: '*'
+  QueryImagesRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: Emanuele-QueryImagesRole-test
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+        - Effect: Allow
+          Principal:
+            Service:
+            - lambda.amazonaws.com
+          Action:
+          - sts:AssumeRole
+      ManagedPolicyArns:
+      - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+      - PolicyName: query-images-policy
+        PolicyDocument:
+          Version: '2012-10-17'
+          Statement:
+          - Effect: Allow
+            Action:
+            - dynamodb:Query
+            Resource:
+            - Fn::Sub: arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/emanuele-artisana-images-test
+          - Effect: Allow
+            Action:
+            - s3:GetObject
+            Resource:
+            - Fn::Sub: arn:aws:s3:::emanuele-artisana-thumbnails-test/*
+  QueryImagesFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: emanuele-query-images-test
+      Role:
+        Fn::GetAtt:
+        - QueryImagesRole
+        - Arn
+      CodeUri: QueryImagesFunction
+      Handler: handler.lambda_handler
+      Environment:
+        Variables:
+          THUMBNAILS_BUCKET: emanuele-artisana-thumbnails-test
+          TABLE_NAME: emanuele-artisana-images-test
+      Events:
+        QueryImages:
+          Type: Api
+          Properties:
+            Path: /query-images
+            Method: get
+    Metadata:
+      SamResourceId: QueryImagesFunction
+  GenerateUploadFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: emanuele-generate-upload-test
+      Role:
+        Fn::GetAtt:
+        - GenerateUploadRole
+        - Arn
+      CodeUri: GenerateUploadFunction
+      Handler: handler.lambda_handler
+      Environment:
+        Variables:
+          UPLOADS_BUCKET: emanuele-artisana-upload-test
+      Events:
+        GenerateURL:
+          Type: Api
+          Properties:
+            Path: /generate-upload-url
+            Method: get
+    Metadata:
+      SamResourceId: GenerateUploadFunction
+  ImageProcessorFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: emanuele-image-processor-test
+      Role:
+        Fn::GetAtt:
+        - ImageProcessorRole
+        - Arn
+      CodeUri: ImageProcessorFunction
+      Handler: handler.lambda_handler
+      Tracing: Active
+      Layers:
+      - Ref: PillowLayer
+      - Ref: XRayLayer
+      Environment:
+        Variables:
+          THUMBNAILS_BUCKET: emanuele-artisana-thumbnails-test
+      Events:
+        UploadCreated:
+          Type: S3
+          Properties:
+            Bucket:
+              Ref: UploadBucket
+            Events: s3:ObjectCreated:*
+    Metadata:
+      SamResourceId: ImageProcessorFunction
+Outputs:
+  ApiEndpoint:
+    Value:
+      Fn::Sub: https://${ServerlessRestApi}.execute-api.${AWS::Region}.amazonaws.com/Prod/generate-upload-url
+  UploadBucket:
+    Value: emanuele-artisana-upload-test
+  ThumbnailBucket:
+    Value: emanuele-artisana-thumbnails-test
+  QueryImagesApi:
+    Value:
+      Fn::Sub: https://${ServerlessRestApi}.execute-api.${AWS::Region}.amazonaws.com/Prod/query-images
