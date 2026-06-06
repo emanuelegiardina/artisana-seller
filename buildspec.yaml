@@ -6,7 +6,7 @@ phases:
     runtime-versions:
       python: 3.12
     commands:
-      - pip install -r requirements-dev.txt
+      - pip install pytest
       - pip install aws-sam-cli
 
   pre_build:
