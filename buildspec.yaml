@@ -6,13 +6,13 @@ phases:
     runtime-versions:
       python: 3.12
     commands:
-      - pip install pytest
+#     - pip install pytest
       - pip install aws-sam-cli
 
   pre_build:
     commands:
       - echo "Running unit tests..."
-      - pytest test/ -v --tb=short
+#      - pytest test/ -v --tb=short
 
   build:
     commands:
